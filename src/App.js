@@ -3,7 +3,7 @@ import {
   CheckCircle, Circle, Upload, FileText, CreditCard, Landmark,
   ClipboardList, Hash, Home, MapPin, Settings, Monitor, Mail,
   Receipt, Phone, UserCircle, GraduationCap, Image, ChevronRight,
-  ChevronDown, Lock, AlertCircle, X, Building2
+  ChevronDown, AlertCircle, X
 } from "lucide-react";
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
@@ -111,9 +111,6 @@ export default function AgencePortal() {
         data.adresse?.code_postal,
         data.adresse?.libelle_commune,
       ].filter(Boolean).join(" ");
-
-      const tel   = data.unite_legale?.tranche_effectif_salarie || "";
-      const email = "";
 
       const fetched = {
         enseigne:     nom + (adresse ? ` — ${adresse}` : ""),
