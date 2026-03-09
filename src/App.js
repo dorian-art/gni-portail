@@ -115,7 +115,7 @@ export default function AgencePortal() {
       const fetched = {
         enseigne:     nom + (adresse ? ` — ${adresse}` : ""),
         facturation:  `${nom}\n${adresse}`.trim(),
-        email_agence: tel ? tel : "",
+        email_agence: "",
         points_vente: String(data.unite_legale?.nombre_etablissements_ouverts || 1),
         logiciel:     "",
       };
