@@ -99,6 +99,7 @@ export default function AgencePortal() {
   const [siretStatus, setSiretStatus] = useState(null);
   const [siretMsg,    setSiretMsg]    = useState("");
   const [siretConfirm, setSiretConfirm] = useState(null);
+  const [clientData,  setClientData]  = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [notFound,    setNotFound]    = useState(false);
 
@@ -108,7 +109,7 @@ export default function AgencePortal() {
       if (!clientId) { setNotFound(true); setLoading(false); return; }
       const data = await sbGet(clientId);
       if (!data) { setNotFound(true); setLoading(false); return; }
-      
+      setClientData(data);
       if (data.informations) setFormValues(data.informations);
       if (data.documents)    setUploads(data.documents);
       setLoading(false);
@@ -158,6 +159,50 @@ export default function AgencePortal() {
     });
   };
 
+  const lookupSiret = async (siret) => {
+    const clean = siret.replace(/[\s.]/g, "");
+    if (clean.length !== 14) return;
+    setSiretStatus("loading");
+    setSiretMsg("");
+    try {
+      // API Annuaire Entreprises — gratuite, pas de clé, CORS OK
+      const res = await fetch(`https://api.annuaire-entreprises.data.gouv.fr/api/v3/etablissement/${clean}`);
+      if (!res.ok) throw new Error("Introuvable");
+      const data = await res.json();
+
+      const nom     = data.unite_legale?.nom_complet || data.unite_legale?.denomination || "";
+      const adresse = [
+        data.adresse?.numero_voie,
+        data.adresse?.type_voie,
+        data.adresse?.libelle_voie,
+        data.adresse?.code_postal,
+        data.adresse?.libelle_commune,
+      ].filter(Boolean).join(" ");
+
+      const fetched = {
+        enseigne:     nom + (adresse ? ` — ${adresse}` : ""),
+        facturation:  `${nom}\n${adresse}`.trim(),
+        email_agence: "",
+        points_vente: String(data.unite_legale?.nombre_etablissements_ouverts || 1),
+        logiciel:     "",
+      };
+
+      const wouldOverwrite = Object.entries(fetched).some(
+        ([key, val]) => val && String(formValues[key] || "").trim()
+      );
+
+      if (wouldOverwrite) {
+        setSiretStatus("confirm");
+        setSiretMsg(`✓ ${nom} trouvé — certains champs sont déjà remplis.`);
+        setSiretConfirm({ fetched, nom });
+      } else {
+        applyFetched(fetched, nom, siret);
+      }
+    } catch {
+      setSiretStatus("error");
+      setSiretMsg("Numéro SIRET introuvable. Vérifiez le numéro ou remplissez manuellement.");
+    }
+  };
 
   const applyFetched = (fetched, nom, siret) => {
     setFormValues((prev) => ({
@@ -173,7 +218,7 @@ export default function AgencePortal() {
 
   const getSectionProgress = (section) => {
     const done = section.items.filter((item) => {
-      if (item.type && item.type !== "file") return !!formValues[item.id]?.trim();
+      if (item.type && item.type !== "file") return !!String(formValues[item.id] || "").trim();
       return !!uploads[item.id];
     }).length;
     return { done, total: section.items.length };
@@ -343,7 +388,7 @@ export default function AgencePortal() {
                   <div style={{ height: 20 }} />
                   {section.items.map((item) => {
                     const isFile    = !item.type || item.type === "file";
-                    const isDone    = isFile ? !!uploads[item.id] : !!formValues[item.id]?.trim();
+                    const isDone    = isFile ? !!uploads[item.id] : !!String(formValues[item.id] || "").trim();
                     const isDragging = dragOver === item.id;
 
                     return (
@@ -545,4 +590,3 @@ export default function AgencePortal() {
     </div>
   );
 }
-// update
