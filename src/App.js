@@ -456,7 +456,6 @@ export default function AgencePortal() {
                                       setSiretStatus(null);
                                       setSiretMsg("");
                                       setSiretConfirm(null);
-                                      if (val.replace(/\s/g, "").length === 14) lookupSiret(val);
                                     }}
                                     placeholder="Ex : 123 456 789 00012"
                                     maxLength={17}
