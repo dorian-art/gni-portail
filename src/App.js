@@ -108,7 +108,7 @@ export default function AgencePortal() {
       if (!clientId) { setNotFound(true); setLoading(false); return; }
       const data = await sbGet(clientId);
       if (!data) { setNotFound(true); setLoading(false); return; }
-      setClientData(data);
+      
       if (data.informations) setFormValues(data.informations);
       if (data.documents)    setUploads(data.documents);
       setLoading(false);
