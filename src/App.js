@@ -99,7 +99,6 @@ export default function AgencePortal() {
   const [siretStatus, setSiretStatus] = useState(null);
   const [siretMsg,    setSiretMsg]    = useState("");
   const [siretConfirm, setSiretConfirm] = useState(null);
-  const [clientData,  setClientData]  = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [notFound,    setNotFound]    = useState(false);
 
@@ -159,50 +158,6 @@ export default function AgencePortal() {
     });
   };
 
-  const lookupSiret = async (siret) => {
-    const clean = siret.replace(/[\s.]/g, "");
-    if (clean.length !== 14) return;
-    setSiretStatus("loading");
-    setSiretMsg("");
-    try {
-      // API Annuaire Entreprises — gratuite, pas de clé, CORS OK
-      const res = await fetch(`https://api.annuaire-entreprises.data.gouv.fr/api/v3/etablissement/${clean}`);
-      if (!res.ok) throw new Error("Introuvable");
-      const data = await res.json();
-
-      const nom     = data.unite_legale?.nom_complet || data.unite_legale?.denomination || "";
-      const adresse = [
-        data.adresse?.numero_voie,
-        data.adresse?.type_voie,
-        data.adresse?.libelle_voie,
-        data.adresse?.code_postal,
-        data.adresse?.libelle_commune,
-      ].filter(Boolean).join(" ");
-
-      const fetched = {
-        enseigne:     nom + (adresse ? ` — ${adresse}` : ""),
-        facturation:  `${nom}\n${adresse}`.trim(),
-        email_agence: "",
-        points_vente: String(data.unite_legale?.nombre_etablissements_ouverts || 1),
-        logiciel:     "",
-      };
-
-      const wouldOverwrite = Object.entries(fetched).some(
-        ([key, val]) => val && formValues[key]?.trim()
-      );
-
-      if (wouldOverwrite) {
-        setSiretStatus("confirm");
-        setSiretMsg(`✓ ${nom} trouvé — certains champs sont déjà remplis.`);
-        setSiretConfirm({ fetched, nom });
-      } else {
-        applyFetched(fetched, nom, siret);
-      }
-    } catch {
-      setSiretStatus("error");
-      setSiretMsg("Numéro SIRET introuvable. Vérifiez le numéro ou remplissez manuellement.");
-    }
-  };
 
   const applyFetched = (fetched, nom, siret) => {
     setFormValues((prev) => ({
