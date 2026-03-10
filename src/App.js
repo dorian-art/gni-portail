@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle, Circle, Upload, FileText, CreditCard, Landmark,
   ClipboardList, Hash, Home, MapPin, Settings, Monitor, Mail,
@@ -10,12 +10,21 @@ import {
 const SUPABASE_URL = "https://niueqiwxhljhouqsjqqx.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5pdWVxaXd4aGxqaG91cXNqcXF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwODYzNzYsImV4cCI6MjA4ODY2MjM3Nn0.I1SqvRG3-boMOd2F9SW0yyZG5iFMAwjGHvsxadOOjg0";
 
-const sbInsert = async (table, data) => {
-  await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: "POST",
+// ── Supabase helpers ──────────────────────────────────────────────────────────
+const sbUpdate = async (id, data) => {
+  await fetch(`${SUPABASE_URL}/rest/v1/clients?id=eq.${id}`, {
+    method: "PATCH",
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify(data)
   });
+};
+
+const sbGet = async (id) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/clients?id=eq.${id}&select=*`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+  });
+  const data = await res.json();
+  return data[0] || null;
 };
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -79,18 +88,76 @@ const SECTIONS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AgencePortal() {
+  // Lire l'ID du client depuis l'URL (?id=xxx)
+  const clientId = new URLSearchParams(window.location.search).get("id");
+
   const [openSection, setOpenSection] = useState("docs");
   const [uploads,     setUploads]     = useState({});
   const [formValues,  setFormValues]  = useState({});
   const [submitted,   setSubmitted]   = useState(false);
   const [dragOver,    setDragOver]    = useState(null);
-  const [siretStatus, setSiretStatus] = useState(null); // null | "loading" | "success" | "error"
+  const [siretStatus, setSiretStatus] = useState(null);
   const [siretMsg,    setSiretMsg]    = useState("");
+  const [siretConfirm, setSiretConfirm] = useState(null);
+  const [clientData,  setClientData]  = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [notFound,    setNotFound]    = useState(false);
 
-  const markUploaded = (id) => setUploads((p) => ({ ...p, [id]: true }));
-  const setField     = (id, val) => setFormValues((p) => ({ ...p, [id]: val }));
+  // Charger le dossier client depuis Supabase
+  useEffect(() => {
+    const load = async () => {
+      if (!clientId) { setNotFound(true); setLoading(false); return; }
+      const data = await sbGet(clientId);
+      if (!data) { setNotFound(true); setLoading(false); return; }
+      setClientData(data);
+      if (data.informations) setFormValues(data.informations);
+      if (data.documents)    setUploads(data.documents);
+      setLoading(false);
+    };
+    load();
+  }, [clientId]);
 
-  const [siretConfirm, setSiretConfirm] = useState(null); // données en attente de confirmation
+  // Sauvegarde automatique en temps réel (debounce 1s)
+  const saveTimeout = useRef(null);
+  const saveToSupabase = (newFormValues, newUploads) => {
+    if (!clientId) return;
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(async () => {
+      const allItems = SECTIONS.flatMap(s => s.items);
+      const docs = {};
+      const infos = {};
+      allItems.forEach(item => {
+        if (!item.type || item.type === "file") {
+          docs[item.id] = !!newUploads[item.id];
+        } else {
+          infos[item.id] = newFormValues[item.id] || "";
+        }
+      });
+      // Calculer le statut
+      const totalDocs  = Object.values(docs).length;
+      const totalInfos = Object.values(infos).filter(v => v).length;
+      const totalFiles = Object.values(docs).filter(v => v).length;
+      const total = totalDocs + Object.keys(infos).length;
+      const done  = totalFiles + totalInfos;
+      const status = done === 0 ? "pending" : done === total ? "complete" : "in_progress";
+      await sbUpdate(clientId, { informations: infos, documents: docs, status });
+    }, 1000);
+  };
+
+  const markUploaded = (id) => {
+    setUploads((p) => {
+      const next = { ...p, [id]: true };
+      saveToSupabase(formValues, next);
+      return next;
+    });
+  };
+  const setField = (id, val) => {
+    setFormValues((p) => {
+      const next = { ...p, [id]: val };
+      saveToSupabase(next, uploads);
+      return next;
+    });
+  };
 
   const lookupSiret = async (siret) => {
     const clean = siret.replace(/[\s.]/g, "");
@@ -161,6 +228,30 @@ export default function AgencePortal() {
   const totalItems = SECTIONS.reduce((acc, s) => acc + getSectionProgress(s).total, 0);
   const globalPct  = Math.round((totalDone / totalItems) * 100);
   const allDone    = totalDone === totalItems;
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'SF Pro Display',-apple-system,sans-serif" }}>
+        <div style={{ textAlign: "center", color: "#86868b" }}>
+          <div style={{ width: 32, height: 32, border: "3px solid #0071e3", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          Chargement de votre dossier…
+        </div>
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'SF Pro Display',-apple-system,sans-serif" }}>
+        <div style={{ textAlign: "center", maxWidth: 400, padding: 32 }}>
+          <img src={LOGO_GNI} alt="GNI" style={{ height: 60, objectFit: "contain", marginBottom: 24 }} />
+          <h2 style={{ fontSize: 20, color: "#1d1d1f", marginBottom: 8 }}>Lien invalide</h2>
+          <p style={{ color: "#86868b", fontSize: 14 }}>Ce lien de dossier n'existe pas ou a expiré. Contactez votre conseiller GNI.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (submitted) {
     return (
@@ -471,17 +562,10 @@ export default function AgencePortal() {
 
           <button onClick={async () => {
             try {
-              await sbInsert("clients", {
-                id:            crypto.randomUUID(),
-                name:          AGENCY.name,
-                email:         formValues.email_agence || "",
-                phone:         formValues.email_agence || "",
-                advisor:       AGENCY.advisor,
-                status:        allDone ? "complete" : "in_progress",
-                informations:  formValues,
-                documents:     uploads,
-                communication: {},
-                relance_history: [],
+              await sbUpdate(clientId, {
+                status: allDone ? "complete" : "in_progress",
+                informations: formValues,
+                documents: uploads,
               });
             } catch(e) { console.error(e); }
             setSubmitted(true);
